@@ -6,6 +6,9 @@ suppressPackageStartupMessages(library(lubridate))
 # get command line argument "monday" as "yyyy-mm-dd"
 main <- function() {
   args <- commandArgs(trailingOnly = TRUE)
+  if (length(args)==0) {
+    stop("You need to specify the Monday of the week you're interested in as yyyy-mm-dd, for example:\n\nRscript AutomatedClockify.R 2019-12-25\n\n", call.=FALSE)
+  } 
   # only getting first arguement here
   return(args[1])
 }
