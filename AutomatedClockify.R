@@ -1,15 +1,15 @@
 suppressPackageStartupMessages(library(httr))
-suppressPackageStartupMessages(library(tidyverse))
+suppressPackageStartupMessages(library(dplyr))
 suppressPackageStartupMessages(library(jsonlite))
 suppressPackageStartupMessages(library(lubridate))
 
 # get command line argument "monday" as "yyyy-mm-dd"
 main <- function() {
   args <- commandArgs(trailingOnly = TRUE)
-  if (length(args)==0) {
-    stop("You need to specify the Monday of the week you're interested in as yyyy-mm-dd, for example:\n\nRscript AutomatedClockify.R 2019-12-25\n\n", call.=FALSE)
+  if (length(args) == 0) {
+    stop("You need to specify the Monday of the week you're interested in as yyyy-mm-dd, for example:\n\nRscript AutomatedClockify.R 2019-12-25\n\n", call. = FALSE)
   } 
-  # only getting first arguement here
+  # only getting first argument here
   return(args[1])
 }
 
@@ -42,7 +42,7 @@ myuserid <- Sys.getenv("clockifyuserid")
 ## define function for projects/tags
 get_projTags <- function(string = 'tags'){
   # this works for tags AND projects
-  whatIwanturl <-stringr::str_c(
+  whatIwanturl <- stringr::str_c(
     'https://api.clockify.me/api/v1/workspaces/',
     myworkspaceid,
     '/',
@@ -53,7 +53,7 @@ get_projTags <- function(string = 'tags'){
     GET(whatIwanturl,
       add_headers("content-type" = "application/json",
       "X-Api-Key" = clockifyAPIkey),
-      query=list("page-size"=maxresults),
+      query = list("page-size" = maxresults),
       accept_json())
   whatIwant_df <- jsonlite::fromJSON(content(whatIwant_json, "text"))
   return(whatIwant_df)
@@ -62,7 +62,7 @@ get_projTags <- function(string = 'tags'){
 ## define function for tasks from projects
 get_tasks <- function(projectid){
   # this works for tags AND projects
-  whatIwanturl <-stringr::str_c(
+  whatIwanturl <- stringr::str_c(
     'https://api.clockify.me/api/v1/workspaces/',
     myworkspaceid,
     '/',
@@ -75,7 +75,7 @@ get_tasks <- function(projectid){
     GET(whatIwanturl,
       add_headers("content-type" = "application/json",
       "X-Api-Key" = clockifyAPIkey),
-      query=list("page-size"=maxresults),
+      query = list("page-size" = maxresults),
       accept_json())
   whatIwant_df <- jsonlite::fromJSON(content(whatIwant_json, "text"))
   return(whatIwant_df)
@@ -88,7 +88,7 @@ projects_df <- get_projTags(string = 'projects')
 
 
 # get timesheet --------------
-timesheeturl <-stringr::str_c(
+timesheeturl <- stringr::str_c(
   'https://api.clockify.me/api/v1/workspaces/',
   myworkspaceid,
   '/user/',
@@ -99,9 +99,9 @@ timesheet_json <-
   GET(timesheeturl,
     add_headers("content-type" = "application/json",
     "X-Api-Key" = clockifyAPIkey),
-    query=list("start"=startdate,
-               "end"= enddate,
-               "page-size"=maxresults,
+    query = list("start" = startdate,
+               "end" = enddate,
+               "page-size" = maxresults,
                "in-progress" = "false"),
     accept_json())
 
@@ -109,10 +109,9 @@ timesheet_json <-
 timesheet_df <- jsonlite::fromJSON(content(timesheet_json, "text"))
 timesheet_timings <- timesheet_df$timeInterval
 timesheet_df$timeInterval <- NULL
-timesheet_df <- cbind(timesheet_df, timesheet_timings)
-tmp_df <- unnest_auto(timesheet_df, tagIds) %>% rename(autoduration = duration)
-timesheet_df <- tmp_df
-rm(tmp_df)
+timesheet_df <- cbind(timesheet_df, timesheet_timings) %>%  tidyr::unnest_longer(tagIds) %>% rename(autoduration = duration)
+
+
 
 
 
@@ -138,25 +137,25 @@ tasks_df_clean <- tasks %>% dplyr::select(id, name) %>% dplyr::rename(task_id = 
 
 
 
-timesheet_tags <- merge.data.frame(timesheet_df_clean,
-                                   tags_df_clean,
-                                   by.x = "tagIds",
-                                   by.y = "tag_id",
-                                   all.x = TRUE)
+timesheet_tags <- dplyr::left_join(timesheet_df_clean, tags_df_clean, by = c("tagIds" = "tag_id"))
+  
+
+
+
 
 timesheet_tags_tasks <- merge.data.frame(timesheet_tags,
                                          tasks_df_clean,
                                          by.x = "taskId",
                                          by.y = "task_id",
-                                         all.x=TRUE)
+                                         all.x = TRUE)
 
 all_data_together <- merge.data.frame(timesheet_tags_tasks,
                                       projects_df_clean,
                                       by.x = "projectId",
                                       by.y = "project_id",
                                       all.x = TRUE) %>%
-  mutate(start = as_datetime(start, tz = Sys.timezone(location = TRUE)),
-         end = as_datetime(end, tz = Sys.timezone(location = TRUE)),
+  mutate(start = as_datetime(start, tz = "Australia/Sydney"),
+         end = as_datetime(end, tz = "Australia/Sydney"),
          myduration = (start %--% end)/dseconds(x = 1))
 
 rm(timesheet_tags, timesheet_tags_tasks)
@@ -168,7 +167,7 @@ all_data_together %>%
   dplyr::select(tag_name, myduration) %>%
   group_by(tag_name) %>%
   summarise(totalSec = sum(myduration)) %>%
-  mutate(hours = totalSec%/%3600, minutes = (totalSec%%3600)/60 ) %>%
+  mutate(hours = totalSec %/% 3600, minutes = (totalSec %% 3600)/60 ) %>%
   mutate(propWeek = totalSec/(35*60*60))
 
 
@@ -180,14 +179,75 @@ all_data_together %>%
   dplyr::select(project_name, myduration) %>%
   group_by(project_name) %>%
   summarise(totalSec = sum(myduration)) %>%
-  mutate(hours = totalSec%/%3600, minutes = (totalSec%%3600)/60 ) %>%
+  mutate(hours = totalSec %/% 3600, minutes = (totalSec %% 3600)/60 ) %>%
+  mutate(propWeek = totalSec/(35*60*60))
+
+print("################################################")
+print("################################################")
+print("################################################")
+print("How much did I work on each training subproject?")
+all_data_together %>%
+  dplyr::filter(substr(tag_name,1,8) == "Teaching") %>%
+  dplyr::select(project_name, myduration) %>%
+  group_by(project_name) %>%
+  summarise(totalSec = sum(myduration)) %>%
+  mutate(hours = totalSec %/% 3600, minutes = (totalSec %% 3600)/60 ) %>%
   mutate(propWeek = totalSec/(35*60*60))
 
 print("How did I go with Overhead?")
-all_data_together %>%filter(tag_name == "Overhead") %>%
+all_data_together %>% filter(tag_name == "Overhead") %>%
   select(project_name, timesheet_description, start, myduration) %>%
-  mutate(myduration=myduration/3600)
+  mutate(myduration = myduration/3600)
 
 #print("Sanity check of all data")
 #all_data_together
+print("How much did I work out of 35 hours?")
+all_data_together %>%
+  summarise(totalSec = sum(myduration)) %>%
+  mutate(propWeek = totalSec/(35*60*60)) %>%
+  dplyr::pull(propWeek)
+
+ggplot2::theme_set(ggplot2::theme_minimal())
+all_data_together %>%
+  # week starts Monday
+  mutate(day = wday(start, week_start = 1),
+         start_time = hour(start) + minute(start)/60 ,
+         end_time = hour(end) + minute(end)/60) %>%
+  ggplot2::ggplot() + ggplot2::geom_rect(ggplot2::aes(
+    xmin = day - 0.5, 
+    xmax = day + 0.5,
+    ymin = hour(start) + minute(start)/60,
+    ymax = hour(end) + minute(end)/60,
+    fill = project_name)) + 
+  ggplot2::scale_y_reverse(breaks = c(8,9,10,11,12,13,14,15,16,17,18)) + 
+  ggplot2::scale_x_continuous(
+    breaks = c(1,2,3,4,5,6,7),
+    labels = c("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")) +
+  ggplot2::labs(title = stringr::str_c("Work diary (by project) for ", format(ymd(monday), format = "%a %b %d, %Y"), " - ", format(ymd(monday) + 6, format = "%a %b %d, %Y") ) , fill = "") + 
+  ggplot2::geom_hline(yintercept = 9, lty = 2) + ggplot2::geom_hline(yintercept = 17, lty = 2) + ggplot2::theme(legend.position = "bottom")
+
+ggplot2::ggsave(paste0(monday, "_proj.pdf"), height = 4)
+
+
+ggplot2::theme_set(ggplot2::theme_minimal())
+all_data_together %>%
+  # week starts Monday
+  mutate(day = wday(start, week_start = 1),
+         start_time = hour(start) + minute(start)/60 ,
+         end_time = hour(end) + minute(end)/60) %>%
+  ggplot2::ggplot() + ggplot2::geom_rect(ggplot2::aes(
+    xmin = day - 0.5, 
+    xmax = day + 0.5,
+    ymin = hour(start) + minute(start)/60,
+    ymax = hour(end) + minute(end)/60,
+    fill = tag_name)) + 
+  ggplot2::scale_y_reverse(breaks = c(8,9,10,11,12,13,14,15,16,17,18)) + 
+  ggplot2::scale_x_continuous(
+    breaks = c(1,2,3,4,5,6,7),
+    labels = c("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")) +
+  ggplot2::labs(title = stringr::str_c("Work diary (by tag) for ", format(ymd(monday), format = "%a %b %d, %Y"), " - ", format(ymd(monday) + 6, format = "%a %b %d, %Y") ) , fill = "") + 
+  ggplot2::geom_hline(yintercept = 9, lty = 2) + ggplot2::geom_hline(yintercept = 17, lty = 2)
+
+ggplot2::ggsave(paste0(monday, "_tag.pdf"), height = 4)
+
 
